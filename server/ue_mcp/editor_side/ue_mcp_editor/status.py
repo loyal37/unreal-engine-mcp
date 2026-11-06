@@ -36,6 +36,7 @@ def status() -> dict:
     except Exception:  # noqa: BLE001
         pass
     project_file = unreal.Paths.get_project_file_path()
+    open_editors = edited_assets()
     return {
         "project_file": unreal.Paths.convert_relative_path_to_full(project_file) if project_file else None,
         "project_name": unreal.SystemLibrary.get_game_name(),
@@ -44,7 +45,8 @@ def status() -> dict:
         "python": sys.version.split()[0],
         "play_in_editor": pie is not None,
         "unsaved_packages": dirty_package_names(),
-        "open_asset_editors": [a.get_path_name() for a in edited_assets() if a is not None],
+        "open_asset_editors": [a.get_path_name() for a in open_editors] if open_editors is not None
+        else "unknown (needs the HT script library)",
         "script_libraries": _script_libraries(),
     }
 

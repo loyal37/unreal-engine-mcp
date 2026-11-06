@@ -137,16 +137,44 @@ def asset_registry():
     return unreal.AssetRegistryHelpers.get_asset_registry()
 
 
-def edited_assets() -> list:
-    try:
-        return list(unreal.get_editor_subsystem(unreal.AssetEditorSubsystem).get_all_edited_assets())
-    except Exception:  # noqa: BLE001
-        return []
+def edited_assets():
+    """Assets open in asset editors, or None when this editor cannot tell (Python does not
+    expose UAssetEditorSubsystem::GetAllEditedAssets; the HT script library does)."""
+    lib = getattr(unreal, "HTModScriptLibrary", None)
+    if lib is not None and hasattr(lib, "get_open_asset_editors"):
+        return [a for a in lib.get_open_asset_editors() if a is not None]
+    return None
 
 
-def is_open_in_editor(asset) -> bool:
-    path = asset.get_path_name()
-    return any(a is not None and a.get_path_name() == path for a in edited_assets())
+def _graph_signature(owner) -> set:
+    sig = set()
+    for e in unreal.ObjectIterator(unreal.MaterialExpression):
+        if e.get_outer() == owner:
+            try:
+                x, y = unreal.MaterialEditingLibrary.get_material_expression_node_position(e)
+            except Exception:  # noqa: BLE001
+                x = y = None
+            sig.add((e.get_class().get_name(), e.get_name(), x, y))
+    return sig
+
+
+def is_open_in_editor(asset):
+    """True/False, or None when unknown. Without the HT script library a Material counts as
+    open when a Material Editor preview copy with the same nodes exists (the editor works on
+    such a copy), which misses copies the user already changed."""
+    lib = getattr(unreal, "HTModScriptLibrary", None)
+    if lib is not None and hasattr(lib, "is_asset_open_in_editor"):
+        return bool(lib.is_asset_open_in_editor(asset))
+    preview_cls = getattr(unreal, "PreviewMaterial", None)
+    if not isinstance(asset, unreal.Material) or preview_cls is None:
+        return None
+    mine = _graph_signature(asset)
+    if not mine:
+        return None
+    for preview in unreal.ObjectIterator(preview_cls):
+        if preview is not None and preview != asset and _graph_signature(preview) == mine:
+            return True
+    return False
 
 
 def dirty_package_names() -> list[str]:
@@ -188,7 +216,7 @@ def modify(obj) -> None:
 
 
 def refuse_if_open(asset, allow: bool, what: str = "asset") -> None:
-    if allow or not is_open_in_editor(asset):
+    if allow or is_open_in_editor(asset) is not True:
         return
     raise UserError(
         f"{asset.get_path_name()} is open in its editor. The Material Editor works on a copy and would overwrite "

@@ -913,11 +913,13 @@ def instance_create(parent: str, path: str, set: dict | None = None) -> dict:
     folder, name = op.rsplit("/", 1)
     if unreal.EditorAssetLibrary.does_asset_exist(op):
         raise UserError(f"{op} already exists")
+    # The factory's InitialParent is not exposed to Python: create, then set the parent.
     factory = unreal.MaterialInstanceConstantFactoryNew()
-    factory.set_editor_property("initial_parent", parent_asset)
     mi = unreal.AssetToolsHelpers.get_asset_tools().create_asset(name, folder, unreal.MaterialInstanceConstant, factory)
     if mi is None:
         raise UserError(f"could not create {op}")
+    MEL.set_material_instance_parent(mi, parent_asset)
+    MEL.update_material_instance(mi)
     result = {"created": mi.get_path_name(), "parent": parent_asset.get_path_name(), "saved": False,
               "note": "creating an asset is not undoable; delete it in the Content Browser if unwanted"}
     if set:
