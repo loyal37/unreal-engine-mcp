@@ -12,6 +12,7 @@ import json
 import os
 import tempfile
 import time
+import uuid
 from pathlib import Path
 
 from .machine_lock import LockTimeout, MachineLock
@@ -93,7 +94,7 @@ class EditorLink:
         (`result`, plus `stdout`/`log` when the helper captured any)."""
         timeout = float(timeout or self.default_timeout)
         self._seq += 1
-        stem = f"{int(time.time() * 1000)}-{self._seq}"
+        stem = f"{self.node_id[:8]}-{self._seq}-{uuid.uuid4().hex[:8]}"
         req_path = self.work_dir / f"{stem}.req.json"
         resp_path = self.work_dir / f"{stem}.resp.json"
         request = {

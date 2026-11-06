@@ -135,6 +135,8 @@ def run(c: Checker):
     c.check("unknown parameter refused", "__error__" in r and "Nope" in r["__error__"], r)
     r = c.call("instance_set_parameters", instance=mi, clear=["UseA"])
     c.check("static switch clear: needs script library or works", "__error__" in r or r.get("cleared", {}).get("UseA") is True, r)
+    if "__error__" not in r:
+        c.call("console_command", command="TRANSACTION UNDO")  # keep UseA on for the later checks
 
     r = c.call("material_add_parameter", material=m, type="scalar", name="Added", group="New", default=0.3,
                connect_to="Specular")
@@ -198,15 +200,111 @@ def run(c: Checker):
     c.check("output_log filter", "lines" in r, r)
 
 
+PLUGIN_SETUP = r'''
+import unreal
+tools = unreal.AssetToolsHelpers.get_asset_tools()
+mesh = unreal.load_asset("{root}/SK_Cube")
+f = unreal.AnimBlueprintFactory()
+f.set_editor_property("target_skeleton", mesh.get_editor_property("skeleton"))
+f.set_editor_property("preview_skeletal_mesh", mesh)
+f.set_editor_property("parent_class", unreal.AnimInstance)
+abp = tools.create_asset("ABP_Test", "{root}", unreal.AnimBlueprint, f)
+bf = unreal.BlueprintFactory()
+bf.set_editor_property("parent_class", unreal.SaveGame)
+sg = tools.create_asset("SG_Test", "{root}", unreal.Blueprint, bf)
+unreal.EditorAssetLibrary.save_directory("{root}", only_if_is_dirty=False)
+[abp.get_path_name(), sg.get_path_name(), str(mesh.get_editor_property("materials")[0].get_editor_property("material_slot_name"))]
+'''.replace("{root}", ROOT)
+
+
+def run_plugins(c: Checker):
+    libs = c.call("script_libraries")
+    if not (libs.get("HTModScriptLibrary") and libs.get("NTEPanelScriptLibrary")):
+        c.check("script libraries loaded (start the scratch editor with --plugins)", False, libs)
+        return
+    c.check("script libraries loaded", True)
+    m, mi = f"{ROOT}/M_Test", f"{ROOT}/MI_Test"
+
+    r = c.call("material_parameters", path=mi)
+    c.check("visibility now comes from the engine", r.get("visibility_method", "").startswith("engine"), r.get("visibility_method"))
+    vis = visible_map(r)
+    c.check("engine agrees: switch branch and unwired rules", vis.get("OnlyWhenOn") is True and vis.get("OnlyWhenOff") is False
+            and vis.get("Connected") is True, vis)
+    rows = {p["name"]: p for p in r.get("parameters", [])}
+    c.check("static switch override is exact", rows.get("UseA", {}).get("overridden_here") is True, rows.get("UseA"))
+    r = c.call("instance_set_parameters", instance=mi, clear=["UseA"])
+    c.check("static switch override cleared", r.get("cleared", {}).get("UseA") is True and r["after"]["UseA"] is False, r)
+    c.call("console_command", command="TRANSACTION UNDO")
+    r = c.call("material_parameters", path=mi)
+    rows = {p["name"]: p for p in r.get("parameters", [])}
+    c.check("undo restores the static switch override", rows.get("UseA", {}).get("overridden_here") is True, rows.get("UseA"))
+
+    c.call("open_asset", path=m)
+    st = c.call("editor_status")
+    c.check("open editors are listed exactly", any(p.endswith("M_Test") for p in st.get("open_asset_editors", [])), st.get("open_asset_editors"))
+    c.call("run_python", code=f"import unreal\nunreal.get_editor_subsystem(unreal.AssetEditorSubsystem)"
+                              f".close_all_editors_for_asset(unreal.load_asset('{m}'))")
+
+    r = c.call("run_python", code=PLUGIN_SETUP, timeout=300)
+    c.check("plugin setup (Anim Blueprint, SaveGame)", isinstance(r.get("value"), list), r)
+    abp, sg, slot_name = (r.get("value") or [None, None, "x"])
+    tg = f"{ROOT}/TG_Test"
+    r = c.call("toggle_graph_create", path=tg, anim_blueprint=abp, savegame_blueprint=sg, character_name="Cube")
+    c.check("toggle graph created with target", r.get("created") and r.get("target", {}).get("success"), r)
+    d = c.call("toggle_graph_describe", path=tg)
+    gen = next((n["id"] for n in d.get("nodes", []) if n["kind"] == "generate"), None)
+    c.check("describe lists the generate node and the preview mesh", gen and d.get("preview_mesh", "").endswith("SK_Cube"), d)
+    ops = [
+        {"op": "add", "kind": "part", "alias": "p", "props": {"comment": "Cube", "material_ids": [0]}},
+        {"op": "add", "kind": "switch", "alias": "s", "props": {"comment": "Show cube", "key": "alt 6", "option_count": 2,
+                                                               "initial_option": 1, "option_labels": ["Off", "On"]}},
+        {"op": "connect", "from": "p", "to": "s", "pin": "option 1"},
+        {"op": "connect", "from": "s", "to": gen},
+    ]
+    r = c.call("toggle_graph_edit", path=tg, operations=ops)
+    c.check("edit batch builds a tree", r.get("success") and set(r.get("aliases", {})) == {"p", "s"}, r)
+    before = len(c.call("toggle_graph_describe", path=tg).get("nodes", []))
+    r = c.call("toggle_graph_edit", path=tg, operations=[{"op": "add", "kind": "group"},
+                                                         {"op": "connect", "from": "nope", "to": gen}])
+    after = len(c.call("toggle_graph_describe", path=tg).get("nodes", []))
+    c.check("failed batch is undone as a whole", not r.get("success", True) and r.get("undone") and before == after, r)
+    r = c.call("toggle_graph_check", path=tg)
+    c.check("check: one variable, valid", r.get("success") and len(r.get("variables", [])) == 1, r)
+    r = c.call("toggle_graph_generate", path=tg)
+    c.check("generate into the Anim Blueprint (unsaved)", r.get("success") and not r.get("saved"), r)
+    r = c.call("panel_scan", anim_blueprint=abp)
+    c.check("panel scan finds the tree row", any(row.get("toggle_tree") for row in r.get("rows", [])), r)
+    r = c.call("panel_generate", params={"anim_blueprint": abp, "output_path": f"{ROOT}/Panel", "title": "Test"})
+    c.check("panel generate", r.get("success") and r.get("widget"), r)
+    r = c.call("toggle_generate", params={"mode": "visibility", "anim_blueprint": abp, "savegame_blueprint": sg,
+                                         "variable": "LegacyCube", "key": "alt 7", "visibility": "0"})
+    c.check("classic visibility toggle", r.get("success"), r)
+
+    r = c.call("material_instance_build", params={"material": m, "name": "MI_Built", "base_color": f"{ROOT}/T_Test_n",
+                                                 "id_texture": f"{ROOT}/T_Test_n", "lightmap": f"{ROOT}/T_Test_n",
+                                                 "normal": f"{ROOT}/T_Test_n"})
+    c.check("four-texture instance builder runs", r.get("success") or r.get("errors"), r)
+
+    r = c.call("run_python", code=f"import unreal\nt = unreal.AssetToolsHelpers.get_asset_tools()\n"
+                                  f"x = t.create_asset('{slot_name}', '{ROOT}/Slots', unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())\n"
+                                  f"unreal.MaterialEditingLibrary.set_material_instance_parent(x, unreal.load_asset('{m}'))\nx.get_path_name()")
+    r = c.call("slot_match_names", folder=f"{ROOT}/Slots", anim_blueprint=abp)
+    c.check("slot names matched through the Anim Blueprint's preview mesh",
+            r.get("changes") and r["changes"][0]["to"].endswith(slot_name), r)
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--project", required=True)
+    p.add_argument("--plugins", action="store_true", help="also check the HT script library tools")
     a = p.parse_args()
     if "ueproject" in a.project.replace("\\", "/").lower():
         raise SystemExit("refusing to run against a real project; use the scratch project")
     c = Checker(build(App(a.project, timeout=120)))
     try:
         run(c)
+        if a.plugins:
+            run_plugins(c)
     except Exception:  # noqa: BLE001
         traceback.print_exc()
         c.failures.append("exception")
