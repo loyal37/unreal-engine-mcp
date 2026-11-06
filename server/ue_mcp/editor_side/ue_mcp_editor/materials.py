@@ -178,8 +178,9 @@ def _prop(e, name, default=None):
 
 def param_info(e) -> dict:
     kind = param_kind(e)
+    group = str(_prop(e, "group", "") or "")
     info = {"name": str(_prop(e, "parameter_name", "")), "type": kind,
-            "group": str(_prop(e, "group", "") or ""), "sort_priority": _prop(e, "sort_priority", 0)}
+            "group": "" if group == "None" else group, "sort_priority": _prop(e, "sort_priority", 0)}
     if kind in ("scalar", "vector", "static_switch", "static_bool", "double_vector"):
         info["default"] = to_json(_prop(e, "default_value"))
     elif kind == "texture":

@@ -1,7 +1,6 @@
 # Tasks
 
-- IN PROGRESS 2026-11-06: build all three phases (user: "直接把三个阶段做完").
-  - Phase 1: server, transport, helper, live tools; unit tests with a fake editor; read-only demo against the user's editor; mutating tests in a scratch project.
-  - Phase 2: HT 1.6.4 / panel 0.1.26 script libraries + MCP tools; plugin-scoped `-NoEngineChanges` builds; targeted tests in a scratch project; stage install (the user's editor stays open).
-  - Phase 3: slot mapping, cooked export, toggle graph editing.
-- ASK THE USER before registering the server with Claude Code (persistent config).
+- OPEN: register the server with Claude Code once the user agrees (`claude mcp add unreal-editor -s user -- "D:\Python312\python.exe" "E:\unreal engine mcp\server\run_server.py" --project "D:\ueproject\HT"`), then start a new session to load it.
+- OPEN (user): close UE and run `D:\ueproject\HT\Saved\Install-20261106-1.6.4-0.1.26\Install.ps1`, reopen HT; then `editor_status` should show both script libraries and `material_parameters` should report the engine method.
+- IDEAS (not requested): connect an end-to-end mod loop (save -> cook -> cooked_export -> packager -> game check); cancelable long calls; a `material_disconnect` tool.
+- DONE 2026-11-06: phases 1-3 (see CURRENT_STATE).
