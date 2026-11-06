@@ -24,4 +24,12 @@
 - MaterialEditingLibrary does not call `Modify()`; the helper calls `modify()` on every touched object inside `unreal.ScopedEditorTransaction`, so Ctrl+Z undoes MCP edits.
 - No implicit saves. Packages are written only by `save_assets`. Plugin generators get `bSaveAssets=false` unless the caller asks.
 - A material open in the Material Editor is edited there on a copy; graph edits refuse such materials unless the caller passes `allow_open_editor`.
-- Before the first save of a package in a server session, its files are copied to `Saved/Backups/ue-mcp-<date>/`.
+- Before a package is saved, its files are copied to `Saved/Backups/ue-mcp-<date>/` (the first copy of the day is kept). Plugin generators with `save: true` back up the Blueprints they write first.
+
+## 2026-11-06 - Where each mod feature lives
+
+- Plugin features that are C++ (toggle trees, classic generators, material instance builder, panel) are reached through script libraries added to the plugins themselves (1.6.4 / 0.1.26), JSON in and out, with no logic of their own. The generator classes are not exported, so a separate plugin could not link to them.
+- The Slot Materials "Match Names" rule and the Cooked Asset Exporter's copy rules were ported to Python (helper / server) instead: they are small, live in Slate code, and the export must work without the editor. If the plugin's rules change, port the change (`SHTMaterialSlotMapper.cpp` OnAutoMatchClicked, `SHTCookedAssetExporter.cpp` ScanSourceDirectory/OnExportClicked).
+- The exporter's saved selection key is `SelectedAssets_%08X` of UE's `GetTypeHash(FString)` (`FCrc::Strihash_DEPRECATED` with the MSB-first 0x04C11DB7 table) of the lower-case source folder; verified against HT's ini.
+- `toggle_graph_edit` runs a batch in one transaction and undoes it with `GEditor->UndoTransaction()` when an operation fails (not when the caller already has a transaction open).
+- `cooked_export` defaults to dry run; `package` launches the packager the plugin launches (`D:\NTE Mod Packager\NTE Mod Packager.exe`) unless another exe is given.

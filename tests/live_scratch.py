@@ -283,7 +283,7 @@ def run_plugins(c: Checker):
     r = c.call("material_instance_build", params={"material": m, "name": "MI_Built", "base_color": f"{ROOT}/T_Test_n",
                                                  "id_texture": f"{ROOT}/T_Test_n", "lightmap": f"{ROOT}/T_Test_n",
                                                  "normal": f"{ROOT}/T_Test_n"})
-    c.check("four-texture instance builder runs", r.get("success") or r.get("errors"), r)
+    c.check("four-texture instance builder runs", r.get("success") and r.get("instance", "").endswith("MI_Built"), r)
 
     r = c.call("run_python", code=f"import unreal\nt = unreal.AssetToolsHelpers.get_asset_tools()\n"
                                   f"x = t.create_asset('{slot_name}', '{ROOT}/Slots', unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())\n"

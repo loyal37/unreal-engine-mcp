@@ -161,26 +161,25 @@ def panel_generate(params: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------- slot name matching
+def _registry_tag(obj, tag: str):
+    ad = asset_registry().get_asset_by_object_path(obj.get_path_name())
+    if ad is None or not ad.is_valid():
+        return None
+    value = ad.get_tag_value(tag)
+    return str(value) if value else None
+
+
 def _preview_mesh(anim_bp):
-    for getter in ("get_preview_mesh",):
-        fn = getattr(anim_bp, getter, None)
-        if fn is not None:
-            try:
-                mesh = fn()
-                if mesh is not None:
-                    return mesh
-            except Exception:  # noqa: BLE001
-                pass
-    for prop in ("preview_skeletal_mesh",):
-        try:
-            mesh = anim_bp.get_editor_property(prop)
-            if mesh is not None:
-                return mesh.load_synchronous() if hasattr(mesh, "load_synchronous") else mesh
-        except Exception:  # noqa: BLE001
-            pass
-    skel = anim_bp.get_editor_property("target_skeleton")
-    if skel is not None and hasattr(skel, "get_preview_mesh"):
-        return skel.get_preview_mesh()
+    """The Anim Blueprint's preview mesh, else its skeleton's (like the Slot Materials tab).
+    PreviewSkeletalMesh is not exposed to Python but is an asset registry tag on both."""
+    for owner in (anim_bp, anim_bp.get_editor_property("target_skeleton")):
+        if owner is None:
+            continue
+        path = _registry_tag(owner, "PreviewSkeletalMesh")
+        if path and path not in ("None", "()"):
+            mesh = unreal.load_asset(path.split("'")[1] if "'" in path else path)
+            if isinstance(mesh, unreal.SkeletalMesh):
+                return mesh
     return None
 
 

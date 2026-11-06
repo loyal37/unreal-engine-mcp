@@ -85,9 +85,11 @@ materials; texture_tuner: slots, source_material, lightmap and/or id_texture."""
         return app.call("toggle_generate", {"params": params}, timeout=300)
 
     @srv.tool("material_instance_build", """
-The Material Instance tab: rebuilds the parent material's texture parameter nodes and creates a
-four-texture instance. params: material, name, base_color, id_texture, lightmap, normal, save
-(default false).""" + NEEDS, {"params": OBJ}, ["params"], read_only=False)
+The Material Instance tab: CLEARS the parent material's graph and rebuilds it with the four texture
+parameters (BaseColor, ID_Tex, LightMap, NormalMap), then creates or updates the instance. Only for
+parents meant to be rebuilt this way; ask the user first. params: material, name, base_color,
+id_texture, lightmap, normal, save (default false).""" + NEEDS, {"params": OBJ}, ["params"],
+              read_only=False, destructive=True)
     def material_instance_build(params: dict):
         return app.call("material_instance_build", {"params": params}, timeout=300)
 
